@@ -4,26 +4,59 @@ import numpy as np
 
 ##### To-do #####
 def dft(x):
-    n = x.shape[0]
+    # TODO
+    return x
 
-    res = np.exp(-((1j * np.pi * 2) / n))
-    return res
+def fshift(spectrum):
+    spectrum = np.roll(spectrum, spectrum.shape[0] // 2, axis=0)
+    spectrum = np.roll(spectrum, spectrum.shape[1] // 2, axis=1)
+    return spectrum
 
 def fm_spectrum(img):
-    s = np.fft.fftshift(np.fft.fft(img))
-    return s
+    s = np.fft.fft2(img)
+    # s = dft(img)
+    s = fshift(s)
+    pre_shifted = np.log(np.abs(s))
+    return pre_shifted
 
 def low_pass_filter(img, th=20):
-    return img
+    filter = np.fft.fft2(img)
+    filter = fshift(filter)
+    for j in range(filter.shape[0]):
+        for i in range(filter.shape[1]):
+            if np.sqrt(((((filter.shape[0] - 1) // 2) - j) ** 2) + ((((filter.shape[1] - 1) // 2) - i) ** 2)) > th:
+                filter[j, i] = 0
+    filter = fshift(filter)
+    filter = np.fft.ifft2(filter)
+    return np.real(filter)
 
 def high_pass_filter(img, th=30):
-    return img
+    filter = np.fft.fft2(img)
+    filter = fshift(filter)
+    for j in range(filter.shape[0]):
+        for i in range(filter.shape[1]):
+            if np.sqrt(((((filter.shape[0] - 1) // 2) - j) ** 2) + ((((filter.shape[1] - 1) // 2) - i) ** 2)) < th:
+                filter[j, i] = 0
+    filter = fshift(filter)
+    filter = np.fft.ifft2(filter)
+    return np.real(filter)
 
 def denoise1(img):
     return img
 
 def denoise2(img):
-    return img
+    inner_ring = 41
+    outer_ring = inner_ring + 2
+    filter = np.fft.fft2(img)
+    filter = fshift(filter)
+    for j in range(filter.shape[0]):
+        for i in range(filter.shape[1]):
+            if np.sqrt(((((filter.shape[0] - 1) // 2) - j) ** 2) + ((((filter.shape[1] - 1) // 2) - i) ** 2)) < inner_ring\
+                    or np.sqrt(((((filter.shape[0] - 1) // 2) - j) ** 2) + ((((filter.shape[1] - 1) // 2) - i) ** 2)) > outer_ring:
+                filter[j, i] = 0
+    filter = fshift(filter)
+    filter = np.fft.ifft2(filter)
+    return np.real(filter)
 
 #################
 

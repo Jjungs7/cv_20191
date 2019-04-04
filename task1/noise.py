@@ -1,31 +1,64 @@
 import cv2 as cv
 import math
 import numpy as np
-import threading
 from task1.utils import calculate_rms
 
 images = [
     ['task1_sample1_clean.png', 'task1_sample1_noise.png'],
     ['task1_sample2_clean.png', 'task1_sample2_noise.png'],
     ['task1_sample3_clean.png', 'task1_sample3_noise.png'],
-    ['task1_sample4_clean.png', 'task1_sample4_noise.png']
+    ['task1_sample4_clean.png', 'task1_sample4_noise.png'],
+    ['test1_clean.png', 'test1_noise.png'],
+    ['test2_clean.png', 'test2_noise.png'],
+    ['test3_clean.png', 'test3_noise.png'],
+    ['test4_clean.png', 'test4_noise.png'],
+    ['test5_clean.png', 'test5_noise.png']
 ]
 
-kernel_size = 3
-sigma_s = 20
-sigma_r = 30
 
-def task1(src_img_path, dst_img_path):
-    original_img = cv.imread(src_img_path.replace('noise', 'clean'))
+def task1(src_img_path, clean_img_path, dst_img_path):
+    results = []
+    clean_img = cv.imread(clean_img_path, cv.IMREAD_COLOR)
     img = np.array(cv.imread(src_img_path, cv.IMREAD_COLOR))
-    print(f'The original rms is = {calculate_rms(original_img, img)}')
+    print()
+    print(f'Computing image {src_img_path}')
+    print(f'The original rms is = \t{calculate_rms(clean_img, img)}')
+    print('-----------------------------------------------------------')
 
-    new_img = apply_bilateral_filter(img, kernel_size, sigma_s, sigma_r)
-    #new_img = apply_median_filter(img, kernel_size)
-    #new_img = apply_average_filter(img, kernel_size)
+    def get_best_filter(kernel_size, sigma_s, sigma_r):
+        print(f'with configs k: {kernel_size}, ss: {sigma_s}, sr: {sigma_r}')
+        img_bilateral = apply_bilateral_filter(img, kernel_size, sigma_s, sigma_r)
+        img_median = apply_median_filter(img, kernel_size)
+        img_average = apply_average_filter(img, kernel_size)
+        img_mixed = apply_median_filter(img_bilateral, kernel_size)
 
-    cv.imwrite(dst_img_path, new_img)
-    print(f'Final rms is = {calculate_rms(original_img, new_img)}')
+        rms_bilateral = calculate_rms(clean_img, img_bilateral)
+        rms_median = calculate_rms(clean_img, img_median)
+        rms_average = calculate_rms(clean_img, img_average)
+        rms_mixed = calculate_rms(clean_img, img_mixed)
+
+        final_img = img_bilateral if rms_bilateral < rms_average else (img_average if rms_average < rms_median else (img_median if rms_median < rms_mixed else img_mixed))
+        final_rms = calculate_rms(clean_img, final_img)
+        results.append(final_rms)
+        if min(results) == final_rms:
+            cv.imwrite(dst_img_path, final_img)
+        print(f'best rms is =\t\t\t{final_rms}')
+
+    configs = [
+        (3, 75, 75),
+        (3, 90, 90),
+        (3, 95, 95),
+        (5, 75, 75),
+        (5, 90, 90),
+        (9, 75, 75),
+        (9, 90, 90),
+        (15, 75, 75),
+        (15, 90, 90)
+    ]
+
+    for kernel_size, sigma_s, sigma_r in configs:
+        get_best_filter(kernel_size, sigma_s, sigma_r)
+    print('-----------------------------------------------------------')
 
 
 """
@@ -119,55 +152,51 @@ You can add more arguments for this function if you need.
 You should return result image.
 """
 def apply_bilateral_filter(img, kernel_size, sigma_s, sigma_r):
+    def l1_distance(x1, y1, z1, x2, y2, z2):
+        return np.abs(x2-x1) + np.abs(y2-y1) + np.abs(z2-z1)
 
     def gaussian(x, sigma):
         return math.exp(-(x ** 2 / (2 * sigma ** 2))) / (2 * np.pi * sigma ** 2)
 
     def bilateral(src, y, x, diam, sigma_s, sigma_r):
-        new_i = 0
-        r = diam // 2
+        b, g, r = src
+        pixel_b = 0
+        pixel_g = 0
+        pixel_r = 0
+        rad = diam // 2
         wp = 0
-        for j in range(-r, r+1):
-            for i in range(-r, r+1):
+        for j in range(-rad, rad+1):
+            for i in range(-rad, rad+1):
                 roi_y = y+j
                 roi_x = x+i
-                if roi_y < 0 or src.shape[0] <= roi_y or roi_x < 0 or src.shape[1] <= roi_x:
+                if roi_y < 0 or b.shape[0] <= roi_y or roi_x < 0 or b.shape[1] <= roi_x:
                     continue
                 g_s = gaussian(np.sqrt((roi_x - x) ** 2 + (roi_y - y) ** 2), sigma_s)
-                g_r = gaussian(np.int(src[roi_y, roi_x]) - np.int(src[y, x]), sigma_r)
+                g_r = gaussian(l1_distance(np.int(b[roi_y, roi_x]), np.int(g[roi_y, roi_x]), np.int(r[roi_y, roi_x]),
+                                           np.int(b[y, x]), np.int(g[y, x]), np.int(r[y, x])), sigma_r)
                 w = g_s * g_r
-                new_i += w * src[roi_y, roi_x]
+                pixel_b += w * b[roi_y, roi_x]
+                pixel_g += w * g[roi_y, roi_x]
+                pixel_r += w * r[roi_y, roi_x]
                 wp += w
-        new_i /= wp
-        return new_i
 
-    if img.shape[2] == 1:
-        colors = img
-    else:
-        colors = np.array([c for c in cv.split(img)])
+        return [pixel_b // wp, pixel_g // wp, pixel_r // wp]
 
+    b, g, r = [c for c in cv.split(img)]
     new_colors = np.full_like(img, 127)
-    for idx, color in enumerate(colors):
-        for y in range(img.shape[0]):
-            for x in range(img.shape[1]):
-                res = bilateral(color, y, x, kernel_size, sigma_s, sigma_r)
-                new_colors[y, x, idx] = res
+    for y in range(img.shape[0]):
+        for x in range(img.shape[1]):
+            res = bilateral((b, g, r), y, x, kernel_size, sigma_s, sigma_r)
+            new_colors[y, x, 0] = res[0]
+            new_colors[y, x, 1] = res[1]
+            new_colors[y, x, 2] = res[2]
 
-    if img.shape[2] == 3:
-        colors = cv.merge((new_colors[:, :, 0], new_colors[:, :, 1], new_colors[:, :, 2]))
-    elif img.shape[2] == 1:
-        colors = new_colors[0]
-    return colors
+    return cv.merge((new_colors[:, :, 0], new_colors[:, :, 1], new_colors[:, :, 2]))
 
 
-#for image in [noise[1] for noise in images]:
-    #task1(f'./data/{image}', f'./res/{image}')
-task1('./data/task1_sample2_noise.png', './res/task1_sample2_noise.png')
-#cv.imshow('./res/task1_sample1_noise1.png', mat=cv.imread('./res/task1_sample1_noise1.png', cv.IMREAD_COLOR))
-#cv.waitKey(0)
-#cv.destroyAllWindows()
+for clean, noise in [i for i in images]:
+    task1(f'./data/{noise}', f'./data/{clean}', f'./res/{noise}')
 
-arr = np.array([[1,2,3],[4,5,6],[7,8,9]], dtype=int)
-#print(arr[-3:, -3:])
-
-#print(np.r_[arr, [np.zeros(arr.shape[1])]])
+img_num = 1
+img_name = 'task1_sample' + str(img_num)
+#task1(f'./data/{img_name}_noise.png', f'./data/{img_name}_clean.png', f'./res/{img_name}_noise.png')
