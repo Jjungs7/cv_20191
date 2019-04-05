@@ -5,6 +5,8 @@ task1/res
 task2/data
 task2/res
 
+task1/log
+
 .idea/
 
 task1/__pycache__
