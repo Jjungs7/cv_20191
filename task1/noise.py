@@ -24,14 +24,18 @@ def task1(src_img_path, clean_img_path, dst_img_path):
     filter_size = 3
     b52 = apply_bilateral_filter(img, 5, 90, 90)
     b52 = apply_bilateral_filter(b52, 5, 90, 90)
-    for kernel_size in [3, 5, 7, 9, 11]:
+    m51 = apply_median_filter(img, 5)
+    m51 = apply_median_filter(m51, 5)
+    for kernel_size in [3, 5, 7, 9]:
         filters = [
             (apply_average_filter(img, kernel_size), 'average'),
             (apply_median_filter(img, kernel_size), 'median'),
             (apply_bilateral_filter(img, kernel_size, 90, 90), 'bilateral'),
             (apply_bilateral2_filter(img, kernel_size, 20, 30), 'bilateral2'),
             (apply_activate_filter(img, kernel_size), 'custom'),
-            (apply_bilateral_filter(b52, kernel_size, 90, 90), 'mixed')
+            (apply_bilateral_filter(b52, kernel_size, 90, 90), 'mixed'),
+            (apply_median_filter(b52, kernel_size), 'mixed2'),
+            (apply_bilateral_filter(m51, kernel_size, 90, 90), 'mixed3')
         ]
 
         for filtered_img, ft in filters:

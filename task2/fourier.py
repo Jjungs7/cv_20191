@@ -80,16 +80,24 @@ def denoise1(img):
 
     inner_ring3 = 215
     outer_ring3 = inner_ring3 + 40
+
+    inner_ring4 = 285
+    outer_ring4 = inner_ring4 + 30
+
+    inner_ring5 = 105
+    outer_ring5 = inner_ring5 + 15
     filter = np.fft.fft2(img)
     #s1 = dft(img)
     filter = fshift(filter)
     for j in range(filter.shape[0]):
         for i in range(filter.shape[1]):
-            if (inner_ring1 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring1 or
+            if ((inner_ring1 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring1 or
                     inner_ring2 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring2 or
-                    inner_ring3 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring3) and \
-                    not(filter.shape[0] // 2 - 2 <= j <= filter.shape[1] // 2 + 2) and \
-                    not(filter.shape[1] // 2 - 2 <= i <= filter.shape[0] // 2 + 2):
+                    inner_ring3 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring3 or
+                    inner_ring4 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring4) and \
+                    not(filter.shape[0] // 2 - 2 <= j <= filter.shape[1] // 2 + 2) and
+                    not(filter.shape[1] // 2 - 2 <= i <= filter.shape[0] // 2 + 2)) or \
+                    inner_ring5 < get_distance(filter.shape[0] // 2, filter.shape[1] // 2, j, i) < outer_ring5:
                 filter[j, i] = 1
     filter = ifshift(filter)
     #s2 = idft(filter)
