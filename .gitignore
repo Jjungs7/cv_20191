@@ -1,13 +1,15 @@
 # Custom
-task1/data
-task1/res
+project1/task1/data
+project1/task1/res
 
-task2/data
-task2/res
+project1/task2/data
+project1/task2/res
 
-task3/faces_training
-task3/faces_test
-task3/2014147516
+*/data
+
+project2/faces_training
+project2/faces_test
+project2/2014147516
 
 task1/log
 
