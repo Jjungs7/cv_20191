@@ -1,5 +1,2 @@
 torch
-Pillow
 numpy
-opencv-python
-natsort
