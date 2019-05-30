@@ -2,8 +2,10 @@ import os
 import cv2
 import torch
 from torch.utils.data import Dataset
+import numpy as np
 from skimage import transform
 from natsort import natsorted
+
 
 class Rescale(object):
     """Rescale the image in a sample to a given size.
@@ -54,5 +56,4 @@ class FaceDataset(Dataset):
         label = torch.tensor(self.label, dtype=torch.int8)
         if self.transform:
             image = self.transform(image)
-        image = image.type(torch.FloatTensor)
         return {'image': image, 'label': label}
