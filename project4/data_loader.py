@@ -40,10 +40,14 @@ class Rescale(object):
 
 class FaceDataset(Dataset):
     def __init__(self, image_dir, label, transform=None):
-        self.images = natsorted(os.listdir(image_dir))
-        self.image_dir = image_dir
+        self.images = []
+        for idx in range(len(image_dir)):
+            for img in natsorted(os.listdir(image_dir[idx])):
+                image = {}
+                image['image'] = os.path.join(image_dir[idx], img)
+                image['label'] = label[idx]
+                self.images.append(image)
         self.transform = transform
-        self.label = label
 
     def __len__(self):
         return len(self.images)
@@ -52,8 +56,9 @@ class FaceDataset(Dataset):
         if idx >= self.__len__():
             return None
 
-        image = cv2.imread(os.path.join(self.image_dir, self.images[idx]))
-        label = torch.tensor(self.label, dtype=torch.int8)
+        sample = self.images[idx]
+        image = cv2.imread(sample['image'], cv2.IMREAD_COLOR)
+        label = torch.tensor(sample['label'], dtype=torch.int8)
         if self.transform:
             image = self.transform(image)
         return {'image': image, 'label': label}

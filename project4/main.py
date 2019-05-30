@@ -36,35 +36,34 @@ def train_model(model, loss_fn, optimizer, num_epochs=10):
 
             running_loss = 0.0
             running_corrects = 0
-            for dset_type in ['fake', 'real', 'gan']:
-                for data in dataloader[phase][dset_type]:
-                    inputs, labels = data['image'], data['label']
-                    inputs = inputs.to(device)
-                    labels = labels.long().to(device)
-                    optimizer.zero_grad()
+            for data in dataloader[phase]:
+                inputs, labels = data['image'], data['label']
+                inputs = inputs.to(device)
+                labels = labels.long().to(device)
+                optimizer.zero_grad()
 
-                    with torch.set_grad_enabled(phase == 'train'):
-                        outputs = model(inputs)
-                        _, preds = torch.max(outputs, 1)
-                        loss = loss_fn(outputs, labels)
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    _, preds = torch.max(outputs, 1)
+                    loss = loss_fn(outputs, labels)
 
-                        if phase == 'train':
-                            loss.backward()
-                            optimizer.step()
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
 
-                    running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data)
 
-                epoch_loss = running_loss / dataset_sizes[phase][dset_type]
-                epoch_acc = running_corrects.double() / dataset_sizes[phase][dset_type]
+            epoch_loss = running_loss / dataset_sizes[phase]
+            epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-                print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-                # deep copy the model
-                if phase == 'val' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(model.cpu().state_dict())
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+            # deep copy the model
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.cpu().state_dict())
 
-                    model = model.to(device)
+                model = model.to(device)
 
         print()
 
@@ -95,12 +94,14 @@ transf = transforms.Compose([
 ])
 
 # Dataset
-dataset = {t: {x: FaceDataset(image_dir=f'{DATA_DIR}/{t}/{x}', label=1 if x == 'real' else 0, transform=transf)
-               for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
-dataloader = {t: {x: DataLoader(dataset[t][x], batch_size=16, shuffle=True, num_workers=2)
-                  for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
+dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test']}
 
-dataset_sizes = {t: {x: len(dataset[t][x]) for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
+#dataset = {t: {x: FaceDataset(image_dir=f'{DATA_DIR}/{t}/{x}', label=1 if x == 'real' else 0, transform=transf) for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
+
+#dataloader = {t: {x: DataLoader(dataset[t][x], batch_size=16, shuffle=True, num_workers=2) for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
+dataloader = {t: DataLoader(dataset[t], batch_size=32, shuffle=True, num_workers=4) for t in ['train', 'test']}
+
+dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test']}
 
 # Update requires_grad
 for param in model.parameters():
@@ -108,7 +109,7 @@ for param in model.parameters():
 
 model.classifier[0] = nn.Linear(model.classifier[0].in_features, model.classifier[0].out_features, bias=True)
 model.classifier[3] = nn.Linear(model.classifier[3].in_features, model.classifier[3].out_features, bias=True)
-model.classifier[6] = nn.Linear(model.classifier[6].in_features, model.classifier[6].out_features, bias=True)
+model.classifier[6] = nn.Linear(model.classifier[6].in_features, 2, bias=True)
 model = model.to(device)
 
 # Loss_fn, Optimizer, scheduler
