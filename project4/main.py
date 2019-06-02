@@ -12,61 +12,52 @@ from models.vgg_vd_16 import MyVgg
 from data_loader import FaceDataset, Rescale
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-batch_size, lr, momentum, step_size, gamma = 10, 0.01, 0.9, 10, 0.1
+batch_size, lr, momentum, step_size, gamma = 24, 0.05, 0.9, 10, 0.1
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 
-#def train_model(model, loss_fn, optimizer, scheduler, num_epochs=10):
-def train_model(model, loss_fn, optimizer, num_epochs=10):
+
+def train_model(model, loss_fn, optimizer, scheduler, num_epochs=10):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.cpu().state_dict())
     best_acc = 0.0
 
     model = model.to(device)
-
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
-        for phase in ['train', 'test']:
-            if phase == 'train':
-                model.train()
-            else:
-                model.eval()
+        scheduler.step()
+        model.train()
 
-            running_loss = 0.0
-            running_corrects = 0
-            for data in dataloader[phase]:
-                inputs, labels = data['image'], data['label']
-                inputs = inputs.float().to(device)
-                labels = labels.long().to(device)
-                optimizer.zero_grad()
+        running_loss = 0.0
+        running_corrects = 0
+        for data in dataloader['train']:
+            inputs, labels = data['image'], data['label']
+            inputs = inputs.float().to(device)
+            labels = labels.long().to(device)
+            optimizer.zero_grad()
 
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    _, preds = torch.max(outputs, 1)
-                    loss = loss_fn(outputs, labels)
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+            loss = loss_fn(outputs, labels)
+            loss.backward()
+            optimizer.step()
 
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
+            running_loss += loss.item() * inputs.size(0)
+            running_corrects += torch.sum(preds == labels.data)
 
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data)
+        epoch_loss = running_loss / dataset_sizes['train']
+        epoch_acc = running_corrects.double() / dataset_sizes['train']
 
-            epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_acc = running_corrects.double() / dataset_sizes[phase]
-
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-            # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.cpu().state_dict())
-
-                model = model.to(device)
+        print('Loss: {:.4f} Acc: {:.4f}'.format(epoch_loss, epoch_acc))
 
         print()
 
+        if epoch % 5 == 4:
+            best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
+
+    best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
@@ -77,6 +68,33 @@ def train_model(model, loss_fn, optimizer, num_epochs=10):
     return model
 
 
+def test_model(model, best_model_wts, best_acc):
+    model.eval()
+    model = model.to(device)
+    acc = 0.0
+    for data in dataloader['test']:
+        inputs, labels = data['image'], data['label']
+        inputs = inputs.float().to(device)
+        labels = labels.long().to(device)
+
+        output = model(inputs)
+        _, preds = torch.max(output, 1)
+        acc += torch.sum(preds == labels.data)
+
+    cur_acc = acc.double() / dataset_sizes['test']
+
+    # deep copy the model
+    if cur_acc > best_acc:
+        best_acc = cur_acc
+        best_model_wts = copy.deepcopy(model.cpu().state_dict())
+
+        model = model.to(device)
+
+    print('Accurracy of this model is : %.4f' % (acc.double() / dataset_sizes['test']))
+
+    return best_model_wts, best_acc
+
+
 # Model
 #model = m.vgg19_bn(pretrained=True)
 #model = MyVgg(3, 2622)
@@ -84,6 +102,9 @@ model = m.vgg16_bn(pretrained=False)
 model.classifier[6] = nn.Linear(in_features=4096, out_features=2622, bias=True)
 model.load_state_dict(torch.load('data/model_params/vgg_face_dag_custom.pth'), strict=False)
 model.eval()
+
+#model = m.resnet152(pretrained=True)
+print(model)
 
 # Transforms
 scale = Rescale(224)
@@ -114,7 +135,9 @@ model.features[38] = nn.BatchNorm2d(512)
 model.features[40] = nn.Conv2d(512, 512, 3, 1, 1)
 model.features[41] = nn.BatchNorm2d(512)
 model.classifier[0] = nn.Linear(model.classifier[0].in_features, model.classifier[0].out_features, bias=True)
+model.classifier[2] = nn.Dropout(0.7)
 model.classifier[3] = nn.Linear(model.classifier[3].in_features, model.classifier[3].out_features, bias=True)
+model.classifier[5] = nn.Dropout(0.7)
 model.classifier[6] = nn.Linear(model.classifier[6].in_features, 2, bias=True)
 
 # Loss_fn, Optimizer, scheduler
@@ -128,7 +151,8 @@ optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.feature
                       list(model.classifier[6].parameters()), lr=lr)
 
 model = model.to(device)
-#scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-#train_model(model, loss_fn, optimizer, scheduler, 20)
-train_model(model, loss_fn, optimizer, 20)
+train_model(model, loss_fn, optimizer, scheduler, 20)
+#train_model(model, loss_fn, optimizer, 20)
+
