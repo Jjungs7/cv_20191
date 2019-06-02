@@ -1,6 +1,7 @@
 import copy
 import datetime as dt
 import os
+import sys
 import time
 import torch
 import torch.nn as nn
@@ -10,9 +11,10 @@ import torchvision.models as m
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from data_loader import FaceDataset, Rescale
+from models.facenet import FaceNetModel
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-batch_size, lr, momentum, step_size, gamma = 100, 0.05, 0.9, 10, 0.1
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+batch_size, lr, momentum, step_size, gamma = 32, 0.05, 0.9, 10, 0.1
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 
@@ -103,11 +105,11 @@ def test_model(model, best_model_wts, best_acc):
 
 
 # Model
-model = m.vgg16_bn(pretrained=False)
-model.classifier[6] = nn.Linear(in_features=4096, out_features=2622, bias=True)
-model.load_state_dict(torch.load('data/model_params/vgg_face_dag_custom.pth'), strict=False)
+# model = m.vgg16_bn(pretrained=False)
+# model.classifier[6] = nn.Linear(in_features=4096, out_features=2622, bias=True)
+# model.load_state_dict(torch.load('data/model_params/vgg_face_dag_custom.pth'), strict=False)
 
-#model = m.resnet152(pretrained=True)
+model = FaceNetModel(embedding_size=128, num_classes=2)
 
 # Transforms
 scale = Rescale(224)
@@ -119,37 +121,52 @@ transf = transforms.Compose([
 
 # Dataset
 dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test']}
-dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=4) for t in ['train', 'test']}
+dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=12) for t in ['train', 'test']}
 dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test']}
 
 # Update requires_grad
 for param in model.parameters():
     param.requires_grad = False
 
-model.features[34] = nn.Conv2d(512, 512, 3, 1, 1)
-model.features[35] = nn.BatchNorm2d(512)
-model.features[37] = nn.Conv2d(512, 512, 3, 1, 1)
-model.features[38] = nn.BatchNorm2d(512)
-model.features[40] = nn.Conv2d(512, 512, 3, 1, 1)
-model.features[41] = nn.BatchNorm2d(512)
-model.classifier[0] = nn.Linear(model.classifier[0].in_features, model.classifier[0].out_features, bias=True)
-model.classifier[2] = nn.Dropout(0.7)
-model.classifier[3] = nn.Linear(model.classifier[3].in_features, model.classifier[3].out_features, bias=True)
-model.classifier[5] = nn.Dropout(0.7)
-model.classifier[6] = nn.Linear(model.classifier[6].in_features, 2, bias=True)
+# model.features[34] = nn.Conv2d(512, 512, 3, 1, 1)
+# model.features[35] = nn.BatchNorm2d(512)
+# model.features[37] = nn.Conv2d(512, 512, 3, 1, 1)
+# model.features[38] = nn.BatchNorm2d(512)
+# model.features[40] = nn.Conv2d(512, 512, 3, 1, 1)
+# model.features[41] = nn.BatchNorm2d(512)
+# model.classifier[0] = nn.Linear(model.classifier[0].in_features, model.classifier[0].out_features, bias=True)
+# model.classifier[2] = nn.Dropout(0.7)
+# model.classifier[3] = nn.Linear(model.classifier[3].in_features, model.classifier[3].out_features, bias=True)
+# model.classifier[5] = nn.Dropout(0.7)
+# model.classifier[6] = nn.Linear(model.classifier[6].in_features, 2, bias=True)
+
+model.model.layer4[2].conv1 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+model.model.layer4[2].bn1 = nn.BatchNorm2d(512)
+model.model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+model.model.layer4[2].bn2 = nn.BatchNorm2d(512)
+model.model.avgpool = nn.AvgPool2d(kernel_size=7, stride=1, padding=0)
+model.model.fc = nn.Linear(25088, 100, True)
+model.model.classifier = nn.Linear(100, 2, True)
 
 # Loss_fn, Optimizer, scheduler
 loss_fn = nn.CrossEntropyLoss()
 
-optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.features[37].parameters()) +
-                      list(model.features[40].parameters()) +
-                      list(model.features[35].parameters()) + list(model.features[38].parameters()) +
-                      list(model.features[41].parameters()) +
-                      list(model.classifier[0].parameters()) + list(model.classifier[3].parameters()) +
-                      list(model.classifier[6].parameters()), lr=lr)
+# optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.features[37].parameters()) +
+#                       list(model.features[40].parameters()) +
+#                       list(model.features[35].parameters()) + list(model.features[38].parameters()) +
+#                       list(model.features[41].parameters()) +
+#                       list(model.classifier[0].parameters()) + list(model.classifier[3].parameters()) +
+#                       list(model.classifier[6].parameters()), lr=lr)
+
+# optimizer = optim.Adam(list(model.model.layer4[2].conv1.parameters()) + list(model.model.layer4[2].bn1.parameters()) +
+#                        list(model.model.layer4[2].conv2.parameters()) + list(model.model.layer4[2].bn2.parameters()) +
+#                        list(model.model.avgpool.parameters()) + list(model.model.fc.parameters()) +
+#                        list(model.model.classifier.parameters())
+#                        , lr=0.001)
+
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 model = model.to(device)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 train_model(model, loss_fn, optimizer, scheduler, 50)
-
