@@ -7,9 +7,6 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 
-batch_size, num_workers, lr, momentum, num_epochs = 32, 4, 0.01, 0.9, 20
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 class LeNet(nn.Module):
     def __init__(self):
@@ -55,10 +52,10 @@ def train_model(model_name, model, dataloader, loss_fn, optimizer, num_epochs=10
     best_acc = 0.0
 
     model = model.to(device)
+    model.train()
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
-        model.train()
 
         running_loss = 0.0
         running_corrects = 0
@@ -85,6 +82,7 @@ def train_model(model_name, model, dataloader, loss_fn, optimizer, num_epochs=10
 
         if epoch % 5 == 4 or epoch_acc > 0.9:
             best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
+            model = model.to(device)
 
     best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
     time_elapsed = time.time() - since
@@ -129,18 +127,22 @@ def test_model(model, best_model_wts, best_acc):
     return best_model_wts, best_acc
 
 
+lr = 0.01
+batch_size = 16
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 transf = transforms.Compose([transforms.ToTensor()])
 trainset = torchvision.datasets.FashionMNIST(root='./data', train=True, download=True, transform=transf)
 testset = torchvision.datasets.FashionMNIST(root='./data', train=False, download=True, transform=transf)
+labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 classes = {
     0: 'T-shirt/top', 1: 'Trouser', 2: 'Pullover', 3: 'Dress', 4: 'Coat',
     5: 'Sandal', 6: 'Shirt', 7: 'Sneaker', 8: 'Bag', 9: 'Ankle boot'
 }
-labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 dataloader = {
-    'train': torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True, num_workers=num_workers),
-    'test': torch.utils.data.DataLoader(testset, batch_size=32, num_workers=num_workers)
+    'train': torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=6),
+    'test': torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=6)
 }
 dataset_sizes = {
     'train': len(trainset),
@@ -151,9 +153,13 @@ model_fcn = FCN(1, 28, 28, 10)
 model_fcn = model_fcn.to(device)
 model_lenet = LeNet()
 model_lenet = model_lenet.to(device)
+
 loss_fn = nn.CrossEntropyLoss()
+#loss_fn = nn.KLDivLoss()
+
 optimizer_fcn = optim.Adam(model_fcn.parameters(), lr=lr)
 optimizer_lenet = optim.Adam(model_lenet.parameters(), lr=lr)
 
+num_epochs = 10
 train_model('fcn', model_fcn, dataloader, loss_fn, optimizer_fcn, num_epochs=num_epochs)
 train_model('lenet', model_lenet, dataloader, loss_fn, optimizer_lenet, num_epochs=num_epochs)
