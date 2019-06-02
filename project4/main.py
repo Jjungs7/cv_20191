@@ -11,11 +11,24 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 from models.vgg_vd_16 import MyVgg
 from data_loader import FaceDataset, Rescale
+from utils.pick_testset import pick_set
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-batch_size, lr, momentum, step_size, gamma = 100, 0.05, 0.9, 10, 0.1
+batch_size, lr, momentum, step_size, gamma = 10, 0.05, 0.9, 10, 0.1
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
+TRAIN_DIR = os.path.join(DATA_DIR, 'train')
+TEST_DIR = os.path.join(DATA_DIR, 'test')
+VALIDATION_PERCENTAGE = 30
+classes = ['fake', 'real', 'gan']
+
+train_dirs = [os.path.join(TRAIN_DIR, path) for path in classes]
+test_dirs = [os.path.join(TEST_DIR, path) for path in classes]
+for idx, direc in enumerate(test_dirs):
+    for f in os.listdir(direc):
+        os.rename(os.path.join(test_dirs[idx], f), os.path.join(os.path.join(train_dirs[idx], f)))
+
+pick_set(VALIDATION_PERCENTAGE, train_dirs, test_dirs)
 
 
 def train_model(model, loss_fn, optimizer, scheduler, num_epochs=10):
@@ -120,7 +133,7 @@ transf = transforms.Compose([
 
 # Dataset
 dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test']}
-dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=4) for t in ['train', 'test']}
+dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=6) for t in ['train', 'test']}
 dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test']}
 
 # Update requires_grad
