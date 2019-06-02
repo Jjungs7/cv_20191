@@ -106,7 +106,7 @@ def test_model(model, best_model_wts, best_acc):
 
         best_acc = cur_acc
         best_model_wts = copy.deepcopy(model.cpu().state_dict())
-        fname = f'vgg_{time_string}_{str(int(best_acc * 10000))}.pth'
+        fname = f'facenet_{time_string}_{str(int(best_acc * 10000))}.pth'
         torch.save(model.state_dict(), f'data/model_params/{fname}')
         print(f'model saved as: {fname}')
 
@@ -119,10 +119,6 @@ def test_model(model, best_model_wts, best_acc):
 
 
 # Model
-# model = m.vgg16_bn(pretrained=False)
-# model.classifier[6] = nn.Linear(in_features=4096, out_features=2622, bias=True)
-# model.load_state_dict(torch.load('data/model_params/vgg_face_dag_custom.pth'), strict=False)
-
 model = FaceNetModel(embedding_size=128, num_classes=2)
 
 # Transforms
@@ -142,35 +138,16 @@ dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test']}
 for param in model.parameters():
     param.requires_grad = False
 
-# model.features[34] = nn.Conv2d(512, 512, 3, 1, 1)
-# model.features[35] = nn.BatchNorm2d(512)
-# model.features[37] = nn.Conv2d(512, 512, 3, 1, 1)
-# model.features[38] = nn.BatchNorm2d(512)
-# model.features[40] = nn.Conv2d(512, 512, 3, 1, 1)
-# model.features[41] = nn.BatchNorm2d(512)
-# model.classifier[0] = nn.Linear(model.classifier[0].in_features, model.classifier[0].out_features, bias=True)
-# model.classifier[2] = nn.Dropout(0.7)
-# model.classifier[3] = nn.Linear(model.classifier[3].in_features, model.classifier[3].out_features, bias=True)
-# model.classifier[5] = nn.Dropout(0.7)
-# model.classifier[6] = nn.Linear(model.classifier[6].in_features, 2, bias=True)
-
 model.model.layer4[2].conv1 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
 model.model.layer4[2].bn1 = nn.BatchNorm2d(512)
 model.model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
 model.model.layer4[2].bn2 = nn.BatchNorm2d(512)
 model.model.avgpool = nn.AvgPool2d(kernel_size=7, stride=1, padding=0)
-model.model.fc = nn.Linear(25088, 100, True)
-model.model.classifier = nn.Linear(100, 2, True)
+model.model.fc = nn.Linear(25088, batch_size, True)
+model.model.classifier = nn.Linear(batch_size, 2, True)
 
 # Loss_fn, Optimizer, scheduler
 loss_fn = nn.CrossEntropyLoss()
-
-# optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.features[37].parameters()) +
-#                       list(model.features[40].parameters()) +
-#                       list(model.features[35].parameters()) + list(model.features[38].parameters()) +
-#                       list(model.features[41].parameters()) +
-#                       list(model.classifier[0].parameters()) + list(model.classifier[3].parameters()) +
-#                       list(model.classifier[6].parameters()), lr=lr)
 
 # optimizer = optim.Adam(list(model.model.layer4[2].conv1.parameters()) + list(model.model.layer4[2].bn1.parameters()) +
 #                        list(model.model.layer4[2].conv2.parameters()) + list(model.model.layer4[2].bn2.parameters()) +
@@ -179,7 +156,6 @@ loss_fn = nn.CrossEntropyLoss()
 #                        , lr=0.001)
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-
 model = model.to(device)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
