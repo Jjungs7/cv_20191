@@ -1,4 +1,5 @@
 import copy
+import datetime as dt
 import os
 import time
 import torch
@@ -12,7 +13,7 @@ from models.vgg_vd_16 import MyVgg
 from data_loader import FaceDataset, Rescale
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-batch_size, lr, momentum, step_size, gamma = 24, 0.05, 0.9, 10, 0.1
+batch_size, lr, momentum, step_size, gamma = 100, 0.05, 0.9, 10, 0.1
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 
@@ -54,7 +55,7 @@ def train_model(model, loss_fn, optimizer, scheduler, num_epochs=10):
 
         print()
 
-        if epoch % 5 == 4:
+        if epoch % 5 == 4 or epoch_acc > 0.9:
             best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
 
     best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
@@ -85,26 +86,29 @@ def test_model(model, best_model_wts, best_acc):
 
     # deep copy the model
     if cur_acc > best_acc:
+        now = dt.datetime.now()
+        time_string = now.strftime('%m-%d_%H-%M')
+
         best_acc = cur_acc
         best_model_wts = copy.deepcopy(model.cpu().state_dict())
+        fname = f'vgg_{time_string}_{str(int(best_acc * 10000))}.pth'
+        torch.save(model.state_dict(), f'data/model_params/{fname}')
+        print(f'model saved as: {fname}')
 
         model = model.to(device)
 
     print('Accurracy of this model is : %.4f' % (acc.double() / dataset_sizes['test']))
+    print()
 
     return best_model_wts, best_acc
 
 
 # Model
-#model = m.vgg19_bn(pretrained=True)
-#model = MyVgg(3, 2622)
 model = m.vgg16_bn(pretrained=False)
 model.classifier[6] = nn.Linear(in_features=4096, out_features=2622, bias=True)
 model.load_state_dict(torch.load('data/model_params/vgg_face_dag_custom.pth'), strict=False)
-model.eval()
 
 #model = m.resnet152(pretrained=True)
-print(model)
 
 # Transforms
 scale = Rescale(224)
@@ -116,12 +120,7 @@ transf = transforms.Compose([
 
 # Dataset
 dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test']}
-
-#dataset = {t: {x: FaceDataset(image_dir=f'{DATA_DIR}/{t}/{x}', label=1 if x == 'real' else 0, transform=transf) for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
-
-#dataloader = {t: {x: DataLoader(dataset[t][x], batch_size=16, shuffle=True, num_workers=2) for x in ['real', 'fake', 'gan']} for t in ['train', 'test']}
 dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=4) for t in ['train', 'test']}
-
 dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test']}
 
 # Update requires_grad
@@ -153,6 +152,5 @@ optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.feature
 model = model.to(device)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-train_model(model, loss_fn, optimizer, scheduler, 20)
-#train_model(model, loss_fn, optimizer, 20)
+train_model(model, loss_fn, optimizer, scheduler, 50)
 
