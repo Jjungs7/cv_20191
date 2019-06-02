@@ -13,7 +13,7 @@ from data_loader import FaceDataset, Rescale
 from utils.pick_testset import pick_set
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-batch_size, lr, momentum, step_size, gamma = 10, 0.05, 0.9, 10, 0.1
+batch_size, lr, momentum, step_size, gamma = 10, 0.001, 0.9, 10, 0.1
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 TRAIN_DIR = os.path.join(DATA_DIR, 'train')
