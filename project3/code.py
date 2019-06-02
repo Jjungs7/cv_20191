@@ -35,8 +35,10 @@ class FCN(nn.Module):
         self.sequential = nn.Sequential(
             nn.Linear(784, 112),
             nn.LeakyReLU(),
+            nn.Dropout(),
             nn.Linear(112, 32),
             nn.LeakyReLU(),
+            nn.Dropout(),
             nn.Linear(32, 10)
         )
 
@@ -46,6 +48,7 @@ class FCN(nn.Module):
 
 
 def train_model(model_name, model, dataloader, loss_fn, optimizer, num_epochs=10):
+    print(f'Training model: {model_name}')
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.cpu().state_dict())
@@ -54,9 +57,6 @@ def train_model(model_name, model, dataloader, loss_fn, optimizer, num_epochs=10
     model = model.to(device)
     model.train()
     for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
         running_loss = 0.0
         running_corrects = 0
         for data in dataloader['train']:
@@ -77,18 +77,15 @@ def train_model(model_name, model, dataloader, loss_fn, optimizer, num_epochs=10
         epoch_loss = running_loss / dataset_sizes['train']
         epoch_acc = running_corrects.double() / dataset_sizes['train']
 
-        print('Loss({}): {:.4f} Acc: {:.4f}'.format(model_name, epoch_loss, epoch_acc))
-        print()
-
+        print('[Epoch {}/{}]Loss({}): {:.4f} Acc: {:.4f}'.format(epoch, num_epochs, model_name, epoch_loss, epoch_acc))
         if epoch % 5 == 4 or epoch_acc > 0.9:
             best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
             model = model.to(device)
 
     best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
     time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}\n'.format(best_acc))
 
     # load best model weights
     model.load_state_dict(best_model_wts)
@@ -112,22 +109,19 @@ def test_model(model, best_model_wts, best_acc):
 
     # deep copy the model
     if cur_acc > best_acc:
-        now = dt.datetime.now()
-        time_string = now.strftime('%m-%d_%H-%M')
+        # now = dt.datetime.now()
+        # time_string = now.strftime('%m-%d_%H-%M')
 
         best_acc = cur_acc
         best_model_wts = copy.deepcopy(model.cpu().state_dict())
-        fname = f'vgg_{time_string}_{str(int(best_acc * 10000))}.pth'
-        torch.save(model.state_dict(), f'data/model_params/{fname}')
-        print(f'model saved as: {fname}')
+        # fname = f'vgg_{time_string}_{str(int(best_acc * 10000))}.pth'
+        # torch.save(model.state_dict(), f'data/model_params/{fname}')
+        # print(f'model saved as: {fname}')
 
     print('Accurracy of this model is : %.4f' % (acc.double() / dataset_sizes['test']))
-    print()
-
     return best_model_wts, best_acc
 
 
-lr = 0.01
 batch_size = 16
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -157,9 +151,13 @@ model_lenet = model_lenet.to(device)
 loss_fn = nn.CrossEntropyLoss()
 #loss_fn = nn.KLDivLoss()
 
+lr = 0.01
 optimizer_fcn = optim.Adam(model_fcn.parameters(), lr=lr)
 optimizer_lenet = optim.Adam(model_lenet.parameters(), lr=lr)
 
-num_epochs = 10
+#optimizer_fcn = optim.SGD(model_fcn.parameters(), lr=lr, momentum=0.9)
+#optimizer_lenet = optim.SGD(model_lenet.parameters(), lr=lr, momentum=0.9)
+
+num_epochs = 15
 train_model('fcn', model_fcn, dataloader, loss_fn, optimizer_fcn, num_epochs=num_epochs)
 train_model('lenet', model_lenet, dataloader, loss_fn, optimizer_lenet, num_epochs=num_epochs)
