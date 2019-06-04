@@ -3,7 +3,6 @@ import cv2
 import datetime as dt
 import numpy as np
 import os
-import sys
 import time
 import torch
 import torch.nn as nn
@@ -11,15 +10,16 @@ import torch.optim as optim
 import torch.cuda
 import torchvision.models as m
 import torchvision.transforms as transforms
+from models.facenet import FaceNetModel
 from natsort import natsorted
 from skimage import transform
 from torch.utils.data import DataLoader, Dataset
-from models.facenet import FaceNetModel
 from utils.pick_testset import pick_set
 
 def main():
-    # Model
-    model = FaceNetModel(embedding_size=128, num_classes=2)
+    #mode = 'train'
+    mode = 'test'
+    global dataset_sizes
 
     # Transforms
     scale = Rescale(224)
@@ -29,40 +29,60 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    # Dataset
-    global dataset_sizes
-    batch_size = 32
-    dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test', 'val']}
-    dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=6) for t in ['train', 'test', 'val']}
-    dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test', 'val']}
+    if mode == 'train':
+        # Model
+        model = FaceNetModel(embedding_size=128, num_classes=2)
 
-    # Update requires_grad
-    for param in model.parameters():
-        param.requires_grad = False
+        # Update requires_grad
+        for param in model.parameters():
+            param.requires_grad = False
 
-    model.model.layer4[2].conv1 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-    model.model.layer4[2].bn1 = nn.BatchNorm2d(512)
-    model.model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-    model.model.layer4[2].bn2 = nn.BatchNorm2d(512)
-    model.model.avgpool = nn.AvgPool2d(kernel_size=7, stride=1, padding=0)
-    model.model.fc = nn.Linear(25088, batch_size, True)
-    model.model.classifier = nn.Linear(batch_size, 2, True)
+        model.model.layer4[2].conv1 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+        model.model.layer4[2].bn1 = nn.BatchNorm2d(512)
+        model.model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+        model.model.layer4[2].bn2 = nn.BatchNorm2d(512)
+        model.model.avgpool = nn.AvgPool2d(kernel_size=7, stride=1, padding=0)
+        model.model.fc = nn.Linear(25088, batch_size, True)
+        model.model.classifier = nn.Linear(batch_size, 2, True)
 
-    # Loss_fn, Optimizer, scheduler
-    loss_fn = nn.CrossEntropyLoss()
+        # Loss_fn, Optimizer, scheduler
+        loss_fn = nn.CrossEntropyLoss()
 
-    lr = 0.05
-    optimizer = optim.Adam(list(model.model.layer4[2].conv1.parameters()) + list(model.model.layer4[2].bn1.parameters()) +
-                           list(model.model.layer4[2].conv2.parameters()) + list(model.model.layer4[2].bn2.parameters()) +
-                           list(model.model.avgpool.parameters()) + list(model.model.fc.parameters()) +
-                           list(model.model.classifier.parameters())
-                           , lr=lr)
+        lr = 0.05
+        optimizer = optim.Adam(list(model.model.layer4[2].conv1.parameters()) + list(model.model.layer4[2].bn1.parameters()) +
+                               list(model.model.layer4[2].conv2.parameters()) + list(model.model.layer4[2].bn2.parameters()) +
+                               list(model.model.avgpool.parameters()) + list(model.model.fc.parameters()) +
+                               list(model.model.classifier.parameters())
+                               , lr=lr)
 
-    # optimizer = optim.Adam(optimizer, lr=lr)
-    model = model.to(device)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.15)
+        # optimizer = optim.Adam(optimizer, lr=lr)
+        model = model.to(device)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.15)
 
-    train_model(model, dataloader, loss_fn, optimizer, scheduler, 50)
+        # Dataset
+        batch_size = 10
+        dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['train', 'test', 'val']}
+        dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=6) for t in ['train', 'test', 'val']}
+        dataset_sizes = {t: len(dataset[t]) for t in ['train', 'test', 'val']}
+
+        train_model(model, dataloader, loss_fn, optimizer, scheduler, 50)
+    elif mode == 'test':
+        # Dataset
+        best_model = 'vgg-123-0000.pth'
+        for d in os.listdir('./data/model_params'):
+            d_split = d.split('-')
+            if len(d_split) == 3:
+                best_model = d if d_split[2] > best_model.split('-')[2] else best_model
+        model = FaceNetModel(embedding_size=128, num_classes=2)
+        print(f'loading model: {best_model}')
+        model.load_state_dict(torch.load(f'data/model_params/{best_model}'), strict=False)
+        model.eval()
+        batch_size = 32
+        dataset = {t: FaceDataset(image_dir=[f'{DATA_DIR}/{t}/real', f'{DATA_DIR}/{t}/fake', f'{DATA_DIR}/{t}/gan'], label=[1, 0, 0], transform=transf) for t in ['test']}
+        dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, shuffle=True, num_workers=6) for t in ['test']}
+        dataset_sizes = {t: len(dataset[t]) for t in ['test']}
+
+        test_model(model, dataloader)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -89,9 +109,8 @@ for idx, direc in enumerate(val_dirs):
     for f in os.listdir(direc):
         os.rename(os.path.join(val_dirs[idx], f), os.path.join(os.path.join(train_dirs[idx], f)))
 
-pick_set(10, train_dirs, test_dirs)
-pick_set(30, train_dirs, val_dirs)
-
+pick_set(100, train_dirs, test_dirs)
+pick_set(0, train_dirs, val_dirs)
 dataset_sizes = {}
 
 
@@ -149,7 +168,7 @@ class FaceDataset(Dataset):
         label = torch.tensor(sample['label'], dtype=torch.int8)
         if self.transform:
             image = self.transform(image)
-        return {'image': image, 'label': label}
+        return {'image': image, 'label': label, 'fname': sample['image']}
 
 
 def train_model(model, dataloader, loss_fn, optimizer, scheduler, num_epochs=10):
@@ -200,7 +219,7 @@ def train_model(model, dataloader, loss_fn, optimizer, scheduler, num_epochs=10)
                 val_acc_history.append(epoch_acc)
 
             if epoch % 5 == 4 or epoch_acc > 0.9:
-                best_model_wts, best_acc = test_model(model, dataloader, best_model_wts, best_acc)
+                best_model_wts, best_acc = validate_model(model, dataloader, best_model_wts, best_acc)
                 model = model.to(device)
 
     best_model_wts, best_acc = test_model(model, best_model_wts, best_acc)
@@ -213,7 +232,37 @@ def train_model(model, dataloader, loss_fn, optimizer, scheduler, num_epochs=10)
     return model
 
 
-def test_model(model, dataloader, best_model_wts, best_acc):
+def test_model(model, dataloader):
+    global dataset_sizes
+    model.eval()
+    model = model.to(device)
+    acc = 0.0
+    with torch.set_grad_enabled(False):
+        for data in dataloader['test']:
+            inputs, labels, fnames = data['image'], data['label'], data['fname']
+            inputs = inputs.float().to(device)
+            labels = labels.long().to(device)
+
+            output = model(inputs)
+            print(output)
+            _, preds = torch.max(output, 1)
+            acc += torch.sum(preds == labels.data)
+            res = [1 - max(output[i][0], output[i][1]) if labels.data[i] == 0 else max(output[i][0], output[i][1]) for i in range(len(fnames))]
+
+            with open('output.txt', 'w') as f:
+                for idx in range(len(fnames)):
+                    fn = os.path.basename(fnames[idx])
+                    f.write(f'{fn},{res[idx]:.7f}\n')
+
+            with open('ground_truth.txt', 'w') as f:
+                for idx in range(len(fnames)):
+                    fn = os.path.basename(fnames[idx])
+                    f.write(f'{fn},{labels.data[idx]}\n')
+
+    acc = acc.double() / dataset_sizes['test']
+    return acc
+
+def validate_model(model, dataloader, best_model_wts, best_acc):
     global dataset_sizes
     model.eval()
     model = model.to(device)
@@ -228,7 +277,7 @@ def test_model(model, dataloader, best_model_wts, best_acc):
             _, preds = torch.max(output, 1)
             acc += torch.sum(preds == labels.data)
 
-    cur_acc = acc.double() / dataset_sizes['test']
+    cur_acc = acc.double() / dataset_sizes['val']
 
     if cur_acc > best_acc:
         now = dt.datetime.now()
@@ -236,7 +285,7 @@ def test_model(model, dataloader, best_model_wts, best_acc):
 
         best_acc = cur_acc
         best_model_wts = copy.deepcopy(model.cpu().state_dict())
-        fname = f'facenet-{time_string}-{str(int(best_acc * 10000))}.pth'
+        fname = f'vgg-{time_string}-{str(int(best_acc * 10000))}.pth'
         torch.save(model.state_dict(), f'data/model_params/{fname}')
         print(f'model saved as: {fname}')
 
