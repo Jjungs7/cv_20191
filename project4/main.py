@@ -195,6 +195,14 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
 
                 model = model.to(device)
 
+            if epoch % 50 == 49:
+                # Save best model
+                now = dt.datetime.now()
+                time_string = now.strftime('%m%d%H%M')
+                fname = f'resnet-{time_string}-{str(int(best_acc * 10000))}.pth'
+                torch.save(model.state_dict(), f'data/trained/{fname}')
+                print(f'model saved as: {fname}')
+
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best test Acc: {:4f}\n'.format(best_acc))
