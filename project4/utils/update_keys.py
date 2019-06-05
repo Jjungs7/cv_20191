@@ -69,5 +69,4 @@ for k, v in model.items():
     elif k == 'fc8.bias':
         new_dict['classifier.6.bias'] = model[k]
 
-
 torch.save(new_dict, '../models/vgg_face_dag_custom.pth')

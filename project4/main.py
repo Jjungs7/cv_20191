@@ -16,7 +16,6 @@ import numpy as np
 from PIL import ImageChops
 from skimage import transform
 from torch.utils.data import DataLoader, Dataset, random_split
-from utils.pick_testset import pick_set
 
 
 def main():
@@ -35,20 +34,49 @@ def main():
     dataset_size = len(dataset)
 
     if mode == 'train':
-        print(model)
+        model.fc = nn.Linear(2048, 8631, bias=True)
         model.load_state_dict(torch.load(weights_path))
         # Update requires_grad
         for param in model.parameters():
             param.requires_grad = False
 
-
+        model.layer4[0].conv1 = nn.Conv2d(1024, 512, 1, 1, bias=False)
+        model.layer4[0].bn1 = nn.BatchNorm2d(512)
+        model.layer4[0].conv2 = nn.Conv2d(512, 512, 3, 2, 1, bias=False)
+        model.layer4[0].bn2 = nn.BatchNorm2d(512)
+        model.layer4[0].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+        model.layer4[0].bn3 = nn.BatchNorm2d(2048)
+        model.layer4[0].downsample[0] = nn.Conv2d(1024, 2048, 1, 2, bias=False)
+        model.layer4[0].downsample[1] = nn.BatchNorm2d(2048)
+        model.layer4[1].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
+        model.layer4[1].bn1 = nn.BatchNorm2d(512)
+        model.layer4[1].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+        model.layer4[1].bn2 = nn.BatchNorm2d(512)
+        model.layer4[1].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+        model.layer4[1].bn3 = nn.BatchNorm2d(2048)
+        model.layer4[2].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
+        model.layer4[2].bn1 = nn.BatchNorm2d(512)
+        model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+        model.layer4[2].bn2 = nn.BatchNorm2d(512)
+        model.layer4[2].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+        model.layer4[2].bn3 = nn.BatchNorm2d(2048)
+        model.fc = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(2048, 2, bias=True)
+        )
         # Loss_fn, Optimizer, scheduler
-        optimizer = optim.SGD(list(model.features[34].parameters()) + list(model.features[37].parameters()) +
-                              list(model.features[40].parameters()) +
-                              list(model.features[35].parameters()) + list(model.features[38].parameters()) +
-                              list(model.features[41].parameters()) +
-                              list(model.classifier[0].parameters()) + list(model.classifier[3].parameters()) +
-                              list(model.classifier[6].parameters()), lr=lr)
+        params = list(model.layer4[0].conv1.parameters()) + list(model.layer4[0].bn1.parameters()) + \
+                 list(model.layer4[0].conv2.parameters()) + list(model.layer4[0].bn2.parameters()) + \
+                 list(model.layer4[0].conv3.parameters()) + list(model.layer4[0].bn3.parameters()) + \
+                 list(model.layer4[0].downsample[0].parameters()) + list(model.layer4[0].downsample[1].parameters()) + \
+                 list(model.layer4[1].conv1.parameters()) + list(model.layer4[1].bn1.parameters()) + \
+                 list(model.layer4[1].conv2.parameters()) + list(model.layer4[1].bn2.parameters()) + \
+                 list(model.layer4[1].conv3.parameters()) + list(model.layer4[1].bn3.parameters()) + \
+                 list(model.layer4[2].conv1.parameters()) + list(model.layer4[2].bn1.parameters()) + \
+                 list(model.layer4[2].conv2.parameters()) + list(model.layer4[2].bn2.parameters()) + \
+                 list(model.layer4[2].conv3.parameters()) + list(model.layer4[2].bn3.parameters())
+
+        optimizer = optim.Adam(params, lr=lr, weight_decay=decay)
 
         loss_fn = nn.CrossEntropyLoss()
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -96,6 +124,7 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
     since = time.time()
     best_model_wts = copy.deepcopy(model.cpu().state_dict())
     best_acc = 0.0
+    last_val_loss = 10.0
 
     model = model.to(device)
     for epoch in range(num_epochs):
@@ -118,9 +147,19 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = loss_fn(outputs, labels)
+                    # l1_crit = nn.L1Loss(False)
+                    # reg_loss = 0
+                    # for param in model.parameters():
+                    #     reg_loss += l1_crit(param)
+
                     if phase == 'train':
+                        # if abs(last_val_loss - running_loss) > 0.1:
+                        #     loss += 0.0005 * reg_loss
                         loss.backward()
                         optimizer.step()
+                    if phase == 'val':
+                        last_val_loss = loss
+
 
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
@@ -165,15 +204,15 @@ def test_model(model, dataloader, dataset_sizes):
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
                     f.write(f'{fn},{res[idx]:.7f}\n')
-                    print('Outputs file saved as output.txt')
+                print('Outputs file saved as output.txt')
 
             with open('gt.txt', 'w') as f:
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
                     f.write(f'{fn},{labels.data[idx]}\n')
-                    print('Ground truth saved as gt.txt')
+                print('Ground truth saved as gt.txt')
 
-    acc = acc.double() / dataset_sizes['test']
+    acc = acc / dataset_sizes['test']
     return acc
 
 
@@ -238,8 +277,9 @@ parser.add_argument('-E', '--epoch', default=50, type=int, help='Num of epochs')
 parser.add_argument('-B', '--batch', default=16, type=int, help='batch size')
 parser.add_argument('--workers', type=int, required=True,
                     help='num of workers(check $ lscpu / take num core * num thread as input)')
-parser.add_argument('--lr', default=0.01, type=float, help='Initial learning rate(decays over time)')
-parser.add_argument('--schstep', default=8, type=int, help='Step size for SGD optimizer scheduler')
+parser.add_argument('--lr', default=0.001, type=float, help='Initial learning rate(decays over time)')
+parser.add_argument('--decay', default=0.01, type=int, help='Weight decay for the optimizer')
+parser.add_argument('--step', default=5, type=int, help='Step size for SGD optimizer scheduler')
 parser.add_argument('--gamma', default=0.9, type=float, help='Gamma (lr decay rate) for SGD optimizer scheduler')
 parser.add_argument('--weights', nargs='?', help='weights to load(ex. data/model_params/vgg-0603-7890.pth')
 args = parser.parse_args()
@@ -251,7 +291,8 @@ num_epochs = args.epoch
 batch_size = args.batch  # default = 16
 workers = args.workers
 lr = args.lr  # default = 0.01
-step_size = args.schstep
+decay = args.decay
+step_size = args.step
 gamma = args.gamma
 weights_path = args.weights  # optional
 if mode not in ['train', 'test']:
