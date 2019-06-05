@@ -14,6 +14,7 @@ import torchvision.transforms as transforms
 from natsort import natsorted
 import numpy as np
 from PIL import ImageChops
+import signal
 from skimage import transform
 from torch.utils.data import DataLoader, Dataset, random_split
 
@@ -34,36 +35,50 @@ def main():
     dataset_size = len(dataset)
 
     if mode == 'train':
-        model.fc = nn.Linear(2048, 8631, bias=True)
+        if weights_path.find('resnet50_ft_dag.pth') >= 0:
+            model.fc = nn.Linear(2048, 8631, bias=True)
+        else:
+            model.fc = nn.Sequential(
+                nn.Dropout(0.7),
+                nn.Linear(2048, 3, bias=True)
+            )
         model.load_state_dict(torch.load(weights_path))
         # Update requires_grad
         for param in model.parameters():
             param.requires_grad = False
 
-        model.layer4[0].conv1 = nn.Conv2d(1024, 512, 1, 1, bias=False)
-        model.layer4[0].bn1 = nn.BatchNorm2d(512)
-        model.layer4[0].conv2 = nn.Conv2d(512, 512, 3, 2, 1, bias=False)
-        model.layer4[0].bn2 = nn.BatchNorm2d(512)
-        model.layer4[0].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-        model.layer4[0].bn3 = nn.BatchNorm2d(2048)
-        model.layer4[0].downsample[0] = nn.Conv2d(1024, 2048, 1, 2, bias=False)
-        model.layer4[0].downsample[1] = nn.BatchNorm2d(2048)
-        model.layer4[1].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
-        model.layer4[1].bn1 = nn.BatchNorm2d(512)
-        model.layer4[1].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-        model.layer4[1].bn2 = nn.BatchNorm2d(512)
-        model.layer4[1].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-        model.layer4[1].bn3 = nn.BatchNorm2d(2048)
-        model.layer4[2].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
-        model.layer4[2].bn1 = nn.BatchNorm2d(512)
-        model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-        model.layer4[2].bn2 = nn.BatchNorm2d(512)
-        model.layer4[2].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-        model.layer4[2].bn3 = nn.BatchNorm2d(2048)
-        model.fc = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(2048, 2, bias=True)
-        )
+        if weights_path.find('resnet50_ft_dag.pth') >= 0:
+            model.layer4[0].conv1 = nn.Conv2d(1024, 512, 1, 1, bias=False)
+            model.layer4[0].bn1 = nn.BatchNorm2d(512)
+            model.layer4[0].conv2 = nn.Conv2d(512, 512, 3, 2, 1, bias=False)
+            model.layer4[0].bn2 = nn.BatchNorm2d(512)
+            model.layer4[0].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+            model.layer4[0].bn3 = nn.BatchNorm2d(2048)
+            model.layer4[0].downsample[0] = nn.Conv2d(1024, 2048, 1, 2, bias=False)
+            model.layer4[0].downsample[1] = nn.BatchNorm2d(2048)
+            model.layer4[1].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
+            model.layer4[1].bn1 = nn.BatchNorm2d(512)
+            model.layer4[1].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+            model.layer4[1].bn2 = nn.BatchNorm2d(512)
+            model.layer4[1].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+            model.layer4[1].bn3 = nn.BatchNorm2d(2048)
+            model.layer4[2].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
+            model.layer4[2].bn1 = nn.BatchNorm2d(512)
+            model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
+            model.layer4[2].bn2 = nn.BatchNorm2d(512)
+            model.layer4[2].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
+            model.layer4[2].bn3 = nn.BatchNorm2d(2048)
+            model.fc = nn.Sequential(
+                nn.Dropout(0.7),
+                nn.Linear(2048, 3, bias=True)
+            )
+
+        for param in model.layer4.parameters():
+            param.requires_grad = True
+
+        for param in model.fc.parameters():
+            param.requires_grad = True
+        
         # Loss_fn, Optimizer, scheduler
         params = list(model.layer4[0].conv1.parameters()) + list(model.layer4[0].bn1.parameters()) + \
                  list(model.layer4[0].conv2.parameters()) + list(model.layer4[0].bn2.parameters()) + \
@@ -76,13 +91,13 @@ def main():
                  list(model.layer4[2].conv2.parameters()) + list(model.layer4[2].bn2.parameters()) + \
                  list(model.layer4[2].conv3.parameters()) + list(model.layer4[2].bn3.parameters())
 
-        optimizer = optim.Adam(params, lr=lr, weight_decay=decay)
+        optimizer = optim.SGD(params, lr=lr, momentum=0.9, weight_decay=decay)
 
         loss_fn = nn.CrossEntropyLoss()
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
         # Dataset
-        train_length = int(dataset_size * 0.7)
+        train_length = int(dataset_size * 0.9)
         lengths = [train_length, dataset_size - train_length]
         train_set, val_set = random_split(dataset, lengths)
         dataset_sizes = {'train': len(train_set), 'val': len(val_set)}
@@ -96,7 +111,7 @@ def main():
         # Save best model
         now = dt.datetime.now()
         time_string = now.strftime('%m%d%H%M')
-        fname = f'vgg-{time_string}-{str(int(best_acc * 10000))}.pth'
+        fname = f'resnet-{time_string}-{str(int(best_acc * 10000))}.pth'
         torch.save(model.state_dict(), f'data/trained/{fname}')
         print(f'model saved as: {fname}')
 
@@ -107,6 +122,10 @@ def main():
         # TODO: model architecture
 
         print(f'loading model: {weights_path}')
+        model.fc = nn.Sequential(
+            nn.Dropout(0.7),
+            nn.Linear(2048, 3, bias=True)
+        )
         model.load_state_dict(torch.load(weights_path), strict=False)
         model.eval()
 
@@ -172,6 +191,7 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.cpu().state_dict())
+
                 model = model.to(device)
 
     time_elapsed = time.time() - since
@@ -284,7 +304,7 @@ parser.add_argument('--gamma', default=0.9, type=float, help='Gamma (lr decay ra
 parser.add_argument('--weights', nargs='?', help='weights to load(ex. data/model_params/vgg-0603-7890.pth')
 args = parser.parse_args()
 
-dataset_classes = [['fake', 0], ['real', 1], ['gan', 0]]
+dataset_classes = [['real', 0], ['fake', 1], ['gan', 2]]
 mode = args.mode
 data_path = args.data  # default = data/
 num_epochs = args.epoch
