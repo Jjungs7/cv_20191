@@ -13,7 +13,7 @@ import torchvision.models as m
 import torchvision.transforms as transforms
 from natsort import natsorted
 import numpy as np
-from PIL import ImageChops
+from PIL import Image, ImageChops
 import signal
 from skimage import transform
 from torch.utils.data import DataLoader, Dataset, random_split
@@ -130,7 +130,7 @@ def main():
         model.eval()
 
         # Dataset
-        test_length = int(dataset_size * 0.1)
+        test_length = int(dataset_size)
         lengths = [test_length, dataset_size - test_length]
         test_set, _ = random_split(dataset, lengths)
         dataset_sizes = {'test': len(test_set)}
@@ -214,19 +214,22 @@ def test_model(model, dataloader, dataset_sizes):
             labels = labels.long().to(device)
 
             output = model(inputs)
+            print(output)
             _, preds = torch.max(output, 1)
+            print(preds)
             acc += torch.sum(preds == labels.data)
             out = nn.functional.log_softmax(output, 1)
+            print(out)
             res = [out[p] for p in preds]
             print(res)
 
-            with open('output.txt', 'w') as f:
+            with open('output.txt', 'a') as f:
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
-                    f.write(f'{fn},{res[idx]:.7f}\n')
+                    f.write(f'{fn},{preds[idx]:.7f}\n')
                 print('Outputs file saved as output.txt')
 
-            with open('gt.txt', 'w') as f:
+            with open('gt.txt', 'a') as f:
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
                     f.write(f'{fn},{labels.data[idx]}\n')
@@ -282,7 +285,20 @@ class FaceDataset(Dataset):
             return None
 
         sample = self.images[idx]
-        image = cv2.imread(sample['image'], cv2.IMREAD_COLOR)
+        false_name = f'data/ela/temp{idx}.jpg'
+        if not os.path.exists(false_name):
+            im_original = Image.open(sample['image'])
+            im_original.save(false_name, quality=90)
+            im_false = Image.open(false_name)
+            diff = ImageChops.difference(im_original, im_false)
+            d = diff.load()
+            w, h = diff.size
+            for x in range(w):
+                for y in range(h):
+                    d[x, y] = tuple(k * 10 for k in d[x, y])
+            diff.save(false_name)
+
+        image = cv2.imread(false_name, cv2.IMREAD_COLOR)
         label = torch.tensor(sample['label'], dtype=torch.int8)
         if self.transform:
             image = self.transform(image)
@@ -318,6 +334,12 @@ weights_path = args.weights  # optional
 if mode not in ['train', 'test']:
     raise Exception('Running mode needed. Expected arguments are (train | test). See $ python main.py -h for help')
 assert type(workers), int
+
+if os.path.exists('output.txt'):
+    os.remove('output.txt')
+
+if os.path.exists('gt.txt'):
+    os.remove('gt.txt')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if __name__ == "__main__":
