@@ -3,6 +3,7 @@ import copy
 import cv2
 import datetime as dt
 import os
+import shutil
 import sys
 import time
 import torch
@@ -340,6 +341,10 @@ if os.path.exists('output.txt'):
 
 if os.path.exists('gt.txt'):
     os.remove('gt.txt')
+
+if os.path.exists('data/ela'):
+    shutil.rmtree('data/ela')
+    os.mkdir('data/ela')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if __name__ == "__main__":
