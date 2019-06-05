@@ -3,6 +3,7 @@ import copy
 import cv2
 import datetime as dt
 import os
+import sys
 import time
 import torch
 import torch.nn as nn
@@ -11,9 +12,10 @@ import torch.cuda
 import torchvision.models as m
 import torchvision.transforms as transforms
 from natsort import natsorted
+import numpy as np
 from PIL import ImageChops
 from skimage import transform
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 from utils.pick_testset import pick_set
 
 
@@ -52,7 +54,14 @@ def main():
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
         # Dataset
-        dataloader = {t: DataLoader(dataset[t], batch_size=batch_size, num_workers=6) for t in ['train', 'val']}
+        train_length = int(dataset_size * 0.7)
+        lengths = [train_length, dataset_size - train_length]
+        train_set, val_set = random_split(dataset, lengths)
+        dataset_sizes = {'train': len(train_set), 'val': len(val_set)}
+        dataloader = {
+            'train': DataLoader(train_set, batch_size=batch_size, num_workers=workers),
+            'val': DataLoader(val_set, batch_size=batch_size, num_workers=workers),
+        }
 
         best_model, best_acc = train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler, num_epochs)
 
@@ -60,7 +69,7 @@ def main():
         now = dt.datetime.now()
         time_string = now.strftime('%m%d%H%M')
         fname = f'vgg-{time_string}-{str(int(best_acc * 10000))}.pth'
-        torch.save(model.state_dict(), f'data/model_params/{fname}')
+        torch.save(model.state_dict(), f'data/trained/{fname}')
         print(f'model saved as: {fname}')
 
     elif mode == 'test':
@@ -73,7 +82,12 @@ def main():
         model.load_state_dict(torch.load(weights_path), strict=False)
         model.eval()
 
-        dataloader = {'test': DataLoader(dataset[t], batch_size=batch_size, num_workers=workers)}
+        # Dataset
+        test_length = int(dataset_size * 0.1)
+        lengths = [test_length, dataset_size - test_length]
+        test_set, _ = random_split(dataset, lengths)
+        dataset_sizes = {'test': len(test_set)}
+        dataloader = {'test': DataLoader(test_set, batch_size=batch_size, num_workers=workers)}
 
         test_model(model, dataloader, dataset_sizes)
 
@@ -188,10 +202,9 @@ class FaceDataset(Dataset):
         self.images = []
         image_dirs = []
         label = []
-        for d in image_dir:
-            for c, l in dataset_classes:
-                image_dirs.append(os.path.join(d, c))
-                label.append(l)
+        for c, l in dataset_classes:
+            image_dirs.append(os.path.join(image_dir, c))
+            label.append(l)
 
         for idx in range(len(image_dirs)):
             for img in natsorted(os.listdir(image_dirs[idx])):
@@ -200,7 +213,6 @@ class FaceDataset(Dataset):
                 image['label'] = label[idx]
                 self.images.append(image)
 
-        print(self.images)
         self.transform = transform
 
     def __len__(self):
@@ -224,7 +236,7 @@ parser.add_argument('--data', required=True,
                     help='path to dataset(ex. \'data/train\' where fake, gan, real are in data/train/')
 parser.add_argument('-E', '--epoch', default=50, type=int, help='Num of epochs')
 parser.add_argument('-B', '--batch', default=16, type=int, help='batch size')
-parser.add_argument('-W', '--workers', type=int, required=True,
+parser.add_argument('--workers', type=int, required=True,
                     help='num of workers(check $ lscpu / take num core * num thread as input)')
 parser.add_argument('--lr', default=0.01, type=float, help='Initial learning rate(decays over time)')
 parser.add_argument('--schstep', default=8, type=int, help='Step size for SGD optimizer scheduler')
