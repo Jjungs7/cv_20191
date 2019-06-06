@@ -194,9 +194,18 @@ def test_model(model, dataloader, dataset_sizes):
 
             output = model(inputs)
             out = nn.functional.sigmoid(output)
-            print(out)
-            vals, preds = torch.max(out, 1)
+            _, preds = torch.max(out, 1)
             acc += torch.sum(preds == labels.data)
+            vals = []
+            for i in range(len(preds)):
+                res = out[i, preds[i]]
+                if preds[i] == 0:
+                    greater = max(out[i, 1], out[i, 2])
+                    v = res + greater
+                    vals.append(res / v)
+                else:
+                    v = res + out[i, 0]
+                    vals.append(1 - (res / v))
 
             with open('prob.txt', 'a') as f:
                 for idx in range(len(fnames)):
