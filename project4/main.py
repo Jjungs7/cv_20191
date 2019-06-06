@@ -208,21 +208,39 @@ def test_model(model, dataloader, dataset_sizes):
                     vals.append(1 - (res / v))
 
             with open('prob.txt', 'a') as f:
+                images = ""
+                res_arr = []
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
-                    f.write(f'{fn},{vals[idx]:.7f}\n')
+                    res_arr.append((fn, vals[idx]))
+                res_arr = sorted(res_arr)
+                for a, b in res_arr:
+                    images += f'{a},{b:.7f}\n'
+                f.write(images)
                 print('Probabilities file saved as prob.txt')
 
             with open('output.txt', 'a') as f:
+                images = ""
+                res_arr = []
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
-                    f.write(f'{fn},{preds[idx]:.7f}\n')
+                    res_arr.append((fn, preds[idx]))
+                res_arr = sorted(res_arr)
+                for a, b in res_arr:
+                    images += f'{a},{b:.7f}\n'
+                f.write(images)
                 print('Outputs file saved as output.txt')
 
             with open('gt.txt', 'a') as f:
+                images = ""
+                res_arr = []
                 for idx in range(len(fnames)):
                     fn = os.path.basename(fnames[idx])
-                    f.write(f'{fn},{labels.data[idx]}\n')
+                    res_arr.append((fn, labels.data[idx]))
+                res_arr = sorted(res_arr)
+                for a, b in res_arr:
+                    images += f'{a},{b:.7f}\n'
+                f.write(images)
                 print('Ground truth saved as gt.txt')
 
     acc = acc / dataset_sizes['test']
