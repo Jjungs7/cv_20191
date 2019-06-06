@@ -27,75 +27,45 @@ def main():
     # Transforms
     transf = transforms.Compose([
         Rescale(224),
+        RandomFlip(0.5),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     # Dataset
-    dataset = FaceDataset(image_dir=data_path, transform=transf)
+    if not refresh_ela:
+        with open('data/last_ela.txt', 'r') as f:
+            ela_dict = json.loads(f)
+        dataset = FaceDataset(ela_dir=ela_dict)
+    else:
+        dataset = FaceDataset(image_dir=data_path, transform=transf)
     dataset_size = len(dataset)
 
     if mode == 'train':
         if weights_path.find('resnet50_ft_dag.pth') >= 0:
             model.fc = nn.Linear(2048, 8631, bias=True)
         else:
-            model.fc = nn.Sequential(
-                nn.Dropout(0.7),
-                nn.Linear(2048, 3, bias=True)
-            )
+            model.fc = nn.Linear(2048, 3, bias=True)
+
         model.load_state_dict(torch.load(weights_path))
         # Update requires_grad
         for param in model.parameters():
             param.requires_grad = False
-
-        if weights_path.find('resnet50_ft_dag.pth') >= 0:
-            model.layer4[0].conv1 = nn.Conv2d(1024, 512, 1, 1, bias=False)
-            model.layer4[0].bn1 = nn.BatchNorm2d(512)
-            model.layer4[0].conv2 = nn.Conv2d(512, 512, 3, 2, 1, bias=False)
-            model.layer4[0].bn2 = nn.BatchNorm2d(512)
-            model.layer4[0].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-            model.layer4[0].bn3 = nn.BatchNorm2d(2048)
-            model.layer4[0].downsample[0] = nn.Conv2d(1024, 2048, 1, 2, bias=False)
-            model.layer4[0].downsample[1] = nn.BatchNorm2d(2048)
-            model.layer4[1].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
-            model.layer4[1].bn1 = nn.BatchNorm2d(512)
-            model.layer4[1].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-            model.layer4[1].bn2 = nn.BatchNorm2d(512)
-            model.layer4[1].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-            model.layer4[1].bn3 = nn.BatchNorm2d(2048)
-            model.layer4[2].conv1 = nn.Conv2d(2048, 512, 1, 1, bias=False)
-            model.layer4[2].bn1 = nn.BatchNorm2d(512)
-            model.layer4[2].conv2 = nn.Conv2d(512, 512, 3, 1, 1, bias=False)
-            model.layer4[2].bn2 = nn.BatchNorm2d(512)
-            model.layer4[2].conv3 = nn.Conv2d(512, 2048, 1, 1, bias=False)
-            model.layer4[2].bn3 = nn.BatchNorm2d(2048)
-            model.fc = nn.Sequential(
-                nn.Dropout(0.7),
-                nn.Linear(2048, 3, bias=True)
-            )
 
         for param in model.layer4.parameters():
             param.requires_grad = True
 
         for param in model.fc.parameters():
             param.requires_grad = True
-        
+
+        if weights_path.find('resnet50_ft_dag.pth') >= 0:
+            model.fc = nn.Linear(2048, 3, bias=True)
+
         # Loss_fn, Optimizer, scheduler
-        params = list(model.layer4[0].conv1.parameters()) + list(model.layer4[0].bn1.parameters()) + \
-                 list(model.layer4[0].conv2.parameters()) + list(model.layer4[0].bn2.parameters()) + \
-                 list(model.layer4[0].conv3.parameters()) + list(model.layer4[0].bn3.parameters()) + \
-                 list(model.layer4[0].downsample[0].parameters()) + list(model.layer4[0].downsample[1].parameters()) + \
-                 list(model.layer4[1].conv1.parameters()) + list(model.layer4[1].bn1.parameters()) + \
-                 list(model.layer4[1].conv2.parameters()) + list(model.layer4[1].bn2.parameters()) + \
-                 list(model.layer4[1].conv3.parameters()) + list(model.layer4[1].bn3.parameters()) + \
-                 list(model.layer4[2].conv1.parameters()) + list(model.layer4[2].bn1.parameters()) + \
-                 list(model.layer4[2].conv2.parameters()) + list(model.layer4[2].bn2.parameters()) + \
-                 list(model.layer4[2].conv3.parameters()) + list(model.layer4[2].bn3.parameters())
+        params = list(model.layer4.parameters()) + list(model.fc.parameters())
 
-        optimizer = optim.SGD(params, lr=lr, momentum=0.9, weight_decay=decay)
-
+        optimizer = optim.SGD(params, lr=lr, momentum=momentum, weight_decay=decay)
         loss_fn = nn.CrossEntropyLoss()
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
         # Dataset
         train_length = int(dataset_size * 0.9)
@@ -107,13 +77,13 @@ def main():
             'val': DataLoader(val_set, batch_size=batch_size, num_workers=workers),
         }
 
-        best_model, best_acc = train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler, num_epochs)
+        best_model, best_acc = train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, num_epochs)
 
         # Save best model
         now = dt.datetime.now()
         time_string = now.strftime('%m%d%H%M')
         fname = f'resnet-{time_string}-{str(int(best_acc * 10000))}.pth'
-        torch.save(model.state_dict(), f'data/trained/{fname}')
+        torch.save(best_model.state_dict(), f'data/trained/{fname}')
         print(f'model saved as: {fname}')
 
     elif mode == 'test':
@@ -121,12 +91,9 @@ def main():
             raise Exception('Weights are needed to test. Please provide weights file with --weights option')
 
         # TODO: model architecture
+        model.fc = nn.Linear(2048, 3, bias=True)
 
         print(f'loading model: {weights_path}')
-        model.fc = nn.Sequential(
-            nn.Dropout(0.7),
-            nn.Linear(2048, 3, bias=True)
-        )
         model.load_state_dict(torch.load(weights_path), strict=False)
         model.eval()
 
@@ -140,7 +107,7 @@ def main():
         test_model(model, dataloader, dataset_sizes)
 
 
-def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler, num_epochs=10):
+def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, num_epochs=10):
     since = time.time()
     best_model_wts = copy.deepcopy(model.cpu().state_dict())
     best_acc = 0.0
@@ -149,8 +116,10 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
     model = model.to(device)
     for epoch in range(num_epochs):
         for phase in ['train', 'val']:
+            if phase == 'val' and dataset_sizes['val'] <= 0:
+                continue
+
             if phase == 'train':
-                scheduler.step()
                 model.train()
             else:
                 model.eval()
@@ -189,17 +158,18 @@ def train_model(model, dataloader, dataset_sizes, loss_fn, optimizer, scheduler,
 
             print('[Epoch {}/{}] {} loss: {:.4f} Acc: {:.4f}'
                   .format(epoch + 1, num_epochs, phase, epoch_loss, epoch_acc))
-            if phase == 'val' and epoch_acc > best_acc:
+            if phase == 'val' and epoch_acc >= best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.cpu().state_dict())
 
                 model = model.to(device)
 
-            if epoch % 50 == 49:
+            if phase == 'val' and epoch % 25 == 24:
                 # Save best model
                 now = dt.datetime.now()
                 time_string = now.strftime('%m%d%H%M')
                 fname = f'resnet-{time_string}-{str(int(best_acc * 10000))}.pth'
+                model.load_state_dict(best_model_wts)
                 torch.save(model.state_dict(), f'data/trained/{fname}')
                 print(f'model saved as: {fname}')
 
@@ -223,14 +193,16 @@ def test_model(model, dataloader, dataset_sizes):
             labels = labels.long().to(device)
 
             output = model(inputs)
-            print(output)
-            _, preds = torch.max(output, 1)
-            print(preds)
-            acc += torch.sum(preds == labels.data)
-            out = nn.functional.log_softmax(output, 1)
+            out = nn.functional.sigmoid(output)
             print(out)
-            res = [out[p] for p in preds]
-            print(res)
+            vals, preds = torch.max(out, 1)
+            acc += torch.sum(preds == labels.data)
+
+            with open('prob.txt', 'a') as f:
+                for idx in range(len(fnames)):
+                    fn = os.path.basename(fnames[idx])
+                    f.write(f'{fn},{vals[idx]:.7f}\n')
+                print('Probabilities file saved as prob.txt')
 
             with open('output.txt', 'a') as f:
                 for idx in range(len(fnames)):
@@ -246,6 +218,19 @@ def test_model(model, dataloader, dataset_sizes):
 
     acc = acc / dataset_sizes['test']
     return acc
+
+
+class RandomFlip(object):
+    def __init__(self, prob):
+        assert isinstance(prob, float)
+        self.prob = prob
+
+    def __call__(self, sample):
+        image = sample
+        if np.random.rand() <= self.prob:
+            np.flipud(image)
+
+        return image
 
 
 class Rescale(object):
@@ -269,22 +254,30 @@ class Rescale(object):
 
 
 class FaceDataset(Dataset):
-    def __init__(self, image_dir, transform=None):
-        self.images = []
-        image_dirs = []
-        label = []
-        for c, l in dataset_classes:
-            image_dirs.append(os.path.join(image_dir, c))
-            label.append(l)
+    def __init__(self, image_dir='', transform=None, ela_dict=None):
+        if image_dir and not ela_dict:
+            self.images = []
+            image_dirs = []
+            label = []
+            for c, l in dataset_classes:
+                image_dirs.append(os.path.join(image_dir, c))
+                label.append(l)
 
-        for idx in range(len(image_dirs)):
-            for img in natsorted(os.listdir(image_dirs[idx])):
-                image = {}
-                image['image'] = os.path.join(image_dirs[idx], img)
-                image['label'] = label[idx]
-                self.images.append(image)
+            for idx in range(len(image_dirs)):
+                for img in natsorted(os.listdir(image_dirs[idx])):
+                    image = {}
+                    image['image'] = os.path.join(image_dirs[idx], img)
+                    image['label'] = label[idx]
+                    self.images.append(image)
 
-        self.transform = transform
+            if mode == 'train' and refresh_ela == True:
+                import json
+                with open('data/last_ela.txt', 'w') as f:
+                    f.write(json.dumps(self.images))
+
+            self.transform = transform
+        elif not image_dir and ela_dict:
+            self.images = ela_dict
 
     def __len__(self):
         return len(self.images)
@@ -294,7 +287,10 @@ class FaceDataset(Dataset):
             return None
 
         sample = self.images[idx]
-        false_name = f'data/ela/temp{idx}.jpg'
+        if mode == 'train':
+            false_name = f'data/ela/temp{idx}.jpg'
+        else:
+            false_name = f'data/test_ela/temp{idx}.jpg'
         if not os.path.exists(false_name):
             im_original = Image.open(sample['image'])
             im_original.save(false_name, quality=90)
@@ -304,7 +300,7 @@ class FaceDataset(Dataset):
             w, h = diff.size
             for x in range(w):
                 for y in range(h):
-                    d[x, y] = tuple(k * 10 for k in d[x, y])
+                    d[x, y] = tuple(k * 20 for k in d[x, y])
             diff.save(false_name)
 
         image = cv2.imread(false_name, cv2.IMREAD_COLOR)
@@ -323,10 +319,10 @@ parser.add_argument('-B', '--batch', default=16, type=int, help='batch size')
 parser.add_argument('--workers', type=int, required=True,
                     help='num of workers(check $ lscpu / take num core * num thread as input)')
 parser.add_argument('--lr', default=0.001, type=float, help='Initial learning rate(decays over time)')
-parser.add_argument('--decay', default=0.01, type=int, help='Weight decay for the optimizer')
-parser.add_argument('--step', default=5, type=int, help='Step size for SGD optimizer scheduler')
-parser.add_argument('--gamma', default=0.9, type=float, help='Gamma (lr decay rate) for SGD optimizer scheduler')
+parser.add_argument('--decay', default=0.01, type=float, help='Weight decay for the optimizer')
+parser.add_argument('--momentum', default=0.9, type=float, help='Weight decay for the optimizer')
 parser.add_argument('--weights', nargs='?', help='weights to load(ex. data/model_params/vgg-0603-7890.pth')
+parser.add_argument('--refela', default=True, type=bool, help='False if you want to use ela of previous run')
 args = parser.parse_args()
 
 dataset_classes = [['real', 0], ['fake', 1], ['gan', 2]]
@@ -337,22 +333,31 @@ batch_size = args.batch  # default = 16
 workers = args.workers
 lr = args.lr  # default = 0.01
 decay = args.decay
-step_size = args.step
-gamma = args.gamma
+momentum = args.momentum
 weights_path = args.weights  # optional
+refresh_ela = args.refela
 if mode not in ['train', 'test']:
     raise Exception('Running mode needed. Expected arguments are (train | test). See $ python main.py -h for help')
 assert type(workers), int
 
-if os.path.exists('output.txt'):
-    os.remove('output.txt')
+if mode == 'test':
+    if os.path.exists('prob.txt'):
+        os.remove('prob.txt')
 
-if os.path.exists('gt.txt'):
-    os.remove('gt.txt')
+    if os.path.exists('output.txt'):
+        os.remove('output.txt')
 
-if os.path.exists('data/ela'):
+    if os.path.exists('gt.txt'):
+        os.remove('gt.txt')
+
+    if os.path.exists('data/test_ela'):
+        shutil.rmtree('data/test_ela')
+        os.mkdir('data/test_ela')
+
+if mode == 'train' and refresh_ela and os.path.exists('data/ela'):
     shutil.rmtree('data/ela')
     os.mkdir('data/ela')
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if __name__ == "__main__":
